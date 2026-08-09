@@ -50,9 +50,13 @@ class Settings:
 
     # --- Bytez (primary LLM provider) -----------------------------------
     BYTEZ_API_KEY: str = os.getenv("BYTEZ_API_KEY", "")
-    BYTEZ_MODEL: str = os.getenv("BYTEZ_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+    BYTEZ_MODEL: str = os.getenv("BYTEZ_MODEL", "openai-community/gpt2")
     BYTEZ_BASE_URL: str = os.getenv("BYTEZ_BASE_URL", "https://api.bytez.com")
     BYTEZ_TIMEOUT: int = _env_int("BYTEZ_TIMEOUT", 60)
+    # Comma-separated fallback model IDs, tried in order if BYTEZ_MODEL is
+    # unavailable on the account's catalog. Empty = use the built-in defaults
+    # in app/providers/bytez.py (DEFAULT_FALLBACK_MODELS).
+    BYTEZ_MODEL_CANDIDATES: List[str] = _env_list("BYTEZ_MODEL_CANDIDATES", [])
 
     # --- GitHub (discovery module) ---------------------------------------
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")

@@ -45,6 +45,7 @@ def build_agent() -> tuple[Agent, GitHubDiscovery, McpClientManager]:
         default_model=settings.BYTEZ_MODEL,
         base_url=settings.BYTEZ_BASE_URL,
         timeout=settings.BYTEZ_TIMEOUT,
+        fallback_models=settings.BYTEZ_MODEL_CANDIDATES or None,
     )
 
     registry = ToolRegistry()
