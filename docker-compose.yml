@@ -1,0 +1,12 @@
+services:
+  agent:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - ./mcp_servers.json:/app/mcp_servers.json
+    restart: unless-stopped

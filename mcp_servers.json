@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "example-filesystem": {
+      "transport": "stdio",
+      "enabled": false,
+      "timeout": 30,
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
+      "env": {}
+    }
+  }
+}
