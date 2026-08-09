@@ -17,6 +17,7 @@
         <button class="nav-item" data-view="github">🔎 GitHub Explorer</button>
         <button class="nav-item" data-view="mcp">🔌 MCP Servers</button>
         <button class="nav-item" data-view="memory">🧠 Memory</button>
+        <button class="nav-item" data-view="providers">🧩 Providers</button>
         <button class="nav-item" data-view="settings">⚙️ Settings</button>
       </nav>
       <div class="sidebar-footer">
@@ -30,6 +31,7 @@
       <section id="view-chat" class="view active">
         <div id="messages" class="messages"></div>
         <div id="status-log" class="status-log"></div>
+        <div id="confirmation-card" class="confirmation-card hidden"></div>
         <form id="chat-form" class="chat-form">
           <input id="chat-input" type="text" placeholder="Ask the agent anything..." autocomplete="off" />
           <button type="submit">Send</button>
@@ -44,9 +46,12 @@
         <form id="agent-form" class="form-grid">
           <input name="name" placeholder="Profile name" required />
           <textarea name="system_prompt" placeholder="System prompt" rows="3"></textarea>
+          <label>Provider (optional — empty uses DEFAULT_PROVIDER + fallback order)</label>
+          <select name="provider" id="agent-provider-select"><option value="">(default)</option></select>
           <input name="model" placeholder="Model override (optional)" />
           <input name="temperature" type="number" step="0.1" min="0" max="2" value="0.2" />
           <input name="tools" placeholder="Allowed tools, comma-separated (empty = all)" />
+          <input name="mcp_servers" placeholder="Allowed MCP servers, comma-separated (empty = none)" />
           <label><input type="checkbox" name="memory_enabled" checked /> Memory enabled</label>
           <input name="max_steps" type="number" placeholder="Max steps (optional)" />
           <button type="submit">Save Profile</button>
@@ -72,14 +77,21 @@
       <!-- MCP VIEW -->
       <section id="view-mcp" class="view">
         <h2>MCP Servers</h2>
+        <p>stdio servers must be pre-trusted (in <code>mcp_servers.json</code>), match <code>MCP_ALLOWED_COMMANDS</code>,
+           or have <code>ALLOW_DYNAMIC_STDIO_MCP=true</code> — and a new stdio server always needs a manual
+           "Confirm" before its first connection.</p>
         <div id="mcp-list" class="card-grid"></div>
         <h3>Add MCP Server</h3>
         <form id="mcp-form" class="form-grid">
           <input name="name" placeholder="Server name" required />
-          <select name="transport"><option value="stdio">stdio</option><option value="sse">sse</option></select>
-          <input name="command" placeholder="Command (stdio), e.g. npx" />
-          <input name="args" placeholder="Args, comma-separated" />
-          <input name="url" placeholder="URL (sse transport)" />
+          <select name="transport">
+            <option value="streamable_http">streamable_http (recommended)</option>
+            <option value="stdio">stdio</option>
+            <option value="sse">sse (legacy)</option>
+          </select>
+          <input name="command" placeholder="Command (stdio only), e.g. npx" />
+          <input name="args" placeholder="Args, comma-separated (stdio only)" />
+          <input name="url" placeholder="URL (streamable_http / sse)" />
           <input name="timeout" type="number" value="30" />
           <button type="submit">Add Server</button>
         </form>
@@ -98,12 +110,26 @@
         </form>
       </section>
 
+      <!-- PROVIDERS VIEW -->
+      <section id="view-providers" class="view">
+        <h2>LLM Providers</h2>
+        <p>Configured via environment variables — API keys are never shown here or sent to the browser.</p>
+        <div id="providers-list" class="card-grid"></div>
+      </section>
+
       <!-- SETTINGS VIEW -->
       <section id="view-settings" class="view">
         <h2>Settings</h2>
-        <p>Configuration is read from environment variables (see <code>.env.example</code>). Restart the
+        <p>Most configuration is read from environment variables (see <code>.env.example</code>). Restart the
            server after changing them.</p>
-        <h3>Available Bytez models</h3>
+        <h3>Local API authorization</h3>
+        <p>If the server has <code>AGENT_API_KEY</code> set, every request needs it. It is stored only in this
+           browser's <code>localStorage</code> — never written into source code.</p>
+        <form id="apikey-form" class="form-grid">
+          <input id="apikey-input" type="password" placeholder="AGENT_API_KEY (leave empty if not required)" />
+          <button type="submit">Save key locally</button>
+        </form>
+        <h3>Available models (all configured providers)</h3>
         <div id="models-list" class="card-grid"></div>
       </section>
     </main>

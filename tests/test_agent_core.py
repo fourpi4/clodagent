@@ -1,5 +1,5 @@
 """
-End-to-end Agent Core test using a fake LLMProvider (no network, no real Bytez key needed).
+End-to-end Agent Core test using a fake LLMProvider (no network, no real API key needed).
 Verifies the plan -> tool selection -> execute -> observe -> reason/replan loop.
 """
 import json
@@ -12,6 +12,7 @@ from app.memory.short_term import SqliteShortTermMemory
 from app.providers.base import ChatResult, LLMProvider, ModelInfo
 from app.tools.base import Tool, ToolResult
 from app.tools.registry import ToolRegistry
+from tests.conftest import make_router
 
 
 class AddTool(Tool):
@@ -22,6 +23,9 @@ class AddTool(Tool):
         "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
         "required": ["a", "b"],
     }
+    risk_level = "read"
+    side_effects = False
+    retry_safe = True
 
     async def execute(self, arguments: dict) -> ToolResult:
         return ToolResult(ok=True, output=arguments["a"] + arguments["b"])
@@ -35,7 +39,7 @@ class ScriptedProvider(LLMProvider):
     def __init__(self) -> None:
         self._call_count = 0
 
-    async def chat(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None) -> ChatResult:
+    async def chat(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None) -> ChatResult:
         self._call_count += 1
 
         # planner call: prompt asks for a JSON array of steps
@@ -59,7 +63,7 @@ class ScriptedProvider(LLMProvider):
         # second executor call -> final answer, no more tool calls
         return ChatResult(content="The sum is 5.", finish_reason="stop")
 
-    async def stream(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None):
+    async def stream(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None):
         yield "unused"
 
     async def list_models(self):
@@ -67,7 +71,7 @@ class ScriptedProvider(LLMProvider):
 
 
 def _build_agent(tmp_path) -> Agent:
-    provider = ScriptedProvider()
+    router = make_router(ScriptedProvider())
     registry = ToolRegistry()
     registry.register_tool(AddTool())
     memory = AgentMemory(
@@ -76,7 +80,7 @@ def _build_agent(tmp_path) -> Agent:
     )
     profile_store = ProfileStore(tmp_path / "profiles.json")
     return Agent(
-        provider,
+        router,
         registry,
         memory,
         profile_store,
@@ -115,7 +119,7 @@ async def test_agent_respects_max_steps(tmp_path):
     class LoopingProvider(LLMProvider):
         name = "looping"
 
-        async def chat(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None):
+        async def chat(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None):
             if messages[-1].content.startswith("Break the following task"):
                 return ChatResult(content="[]")
             return ChatResult(
@@ -124,13 +128,13 @@ async def test_agent_respects_max_steps(tmp_path):
                 finish_reason="tool_calls",
             )
 
-        async def stream(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None):
+        async def stream(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None):
             yield ""
 
         async def list_models(self):
             return []
 
-    provider = LoopingProvider()
+    router = make_router(LoopingProvider())
     registry = ToolRegistry()
     registry.register_tool(AddTool())
     memory = AgentMemory(
@@ -139,10 +143,50 @@ async def test_agent_respects_max_steps(tmp_path):
     )
     profile_store = ProfileStore(tmp_path / "profiles.json")
     agent = Agent(
-        provider, registry, memory, profile_store,
+        router, registry, memory, profile_store,
         max_agent_steps=3, max_tool_calls=100, tool_timeout=5, max_retries=0,
     )
 
     result = await agent.run_task("loop forever")
     assert result.status == "max_steps_reached"
     assert result.steps_used == 3
+
+
+async def test_plan_is_injected_into_conversation_context(tmp_path):
+    """The plan must actually influence the loop: a system message with the plan
+    progress is present in the conversation sent to the model, not just returned
+    in the API response."""
+
+    class PlanCheckingProvider(LLMProvider):
+        name = "plan-checking"
+
+        def __init__(self):
+            self.saw_plan_in_context = False
+
+        async def chat(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None):
+            if messages[-1].role == "user" and messages[-1].content.startswith("Break the following task"):
+                return ChatResult(content='["Step one", "Step two"]')
+            # Every subsequent call should have a system message containing the plan.
+            if any("Step one" in m.content and m.role == "system" for m in messages):
+                self.saw_plan_in_context = True
+            return ChatResult(content="done", finish_reason="stop")
+
+        async def stream(self, messages, *, tools=None, temperature=0.2, max_tokens=None, model=None, provider=None):
+            yield ""
+
+        async def list_models(self):
+            return []
+
+    fake = PlanCheckingProvider()
+    router = make_router(fake)
+    registry = ToolRegistry()
+    memory = AgentMemory(
+        short_term=SqliteShortTermMemory(tmp_path / "short.sqlite3"),
+        long_term=SqliteLongTermMemory(tmp_path / "long.sqlite3"),
+    )
+    profile_store = ProfileStore(tmp_path / "profiles.json")
+    agent = Agent(router, registry, memory, profile_store, max_agent_steps=5, max_tool_calls=5, tool_timeout=5, max_retries=0)
+
+    result = await agent.run_task("multi-step task")
+    assert result.status == "success"
+    assert fake.saw_plan_in_context is True

@@ -41,6 +41,10 @@ class FileReadTool(Tool):
         "properties": {"path": {"type": "string", "description": "Path relative to the workspace root"}},
         "required": ["path"],
     }
+    risk_level = "read"
+    side_effects = False
+    retry_safe = True
+    requires_confirmation = False
 
     def __init__(self, sandbox: WorkspaceSandbox) -> None:
         self._sandbox = sandbox
@@ -67,6 +71,9 @@ class FileWriteTool(Tool):
         },
         "required": ["path", "content"],
     }
+    risk_level = "write"
+    side_effects = True
+    retry_safe = False  # writing twice on a spurious failure could double-append/clobber unexpectedly
     requires_confirmation = True
 
     def __init__(self, sandbox: WorkspaceSandbox) -> None:
@@ -93,6 +100,10 @@ class FileListTool(Tool):
         "properties": {"path": {"type": "string", "description": "Directory relative to the workspace root, default '.'"}},
         "required": [],
     }
+    risk_level = "read"
+    side_effects = False
+    retry_safe = True
+    requires_confirmation = False
 
     def __init__(self, sandbox: WorkspaceSandbox) -> None:
         self._sandbox = sandbox

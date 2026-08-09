@@ -7,6 +7,12 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
       "env": {}
+    },
+    "example-remote": {
+      "transport": "streamable_http",
+      "enabled": false,
+      "timeout": 30,
+      "url": "https://example.com/mcp"
     }
   }
 }

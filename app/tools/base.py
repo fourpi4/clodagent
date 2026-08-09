@@ -3,7 +3,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+RiskLevel = Literal["read", "network", "write", "execute", "destructive"]
+
+_RISK_ORDER: dict[str, int] = {
+    "read": 0,
+    "network": 1,
+    "write": 2,
+    "execute": 3,
+    "destructive": 4,
+}
 
 
 class ToolError(RuntimeError):
@@ -30,7 +40,19 @@ class Tool(ABC):
     # JSON-schema describing accepted arguments, e.g.
     # {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
     input_schema: dict[str, Any]
-    # Marks tools that perform side effects a user may want to confirm (writes, network calls, etc).
+
+    # --- Safety metadata --------------------------------------------------
+    # How risky is running this tool. Used to decide default confirmation
+    # behavior and to help a human reviewer reason about impact.
+    risk_level: RiskLevel = "read"
+    # Does this tool change state outside the current process (filesystem,
+    # network resource, external service)? Pure reads/computations are False.
+    side_effects: bool = False
+    # Is it safe to blindly retry this tool on failure? False for anything
+    # with side_effects that isn't provably idempotent (e.g. file_write).
+    retry_safe: bool = True
+    # If True, the Executor must pause and obtain explicit human approval
+    # before this tool is ever executed (see agent/confirmation.py).
     requires_confirmation: bool = False
 
     def validate(self, arguments: dict[str, Any]) -> None:
@@ -69,5 +91,8 @@ class Tool(ABC):
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
+            "risk_level": self.risk_level,
+            "side_effects": self.side_effects,
+            "retry_safe": self.retry_safe,
             "requires_confirmation": self.requires_confirmation,
         }

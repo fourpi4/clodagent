@@ -18,6 +18,7 @@ class AgentRunRequest(BaseModel):
 
 
 class AgentRunResponse(BaseModel):
+    run_id: str
     session_id: Optional[str] = None
     task: str
     plan: list[str]
@@ -25,11 +26,13 @@ class AgentRunResponse(BaseModel):
     status: str
     final_answer: str
     steps_used: int
+    confirmation: Optional[dict[str, Any]] = None
 
 
 class AgentProfileSchema(BaseModel):
     name: str
     system_prompt: str = "You are a helpful, precise AI agent. Use tools when they help answer accurately."
+    provider: Optional[str] = None
     model: Optional[str] = None
     temperature: float = 0.2
     tools: list[str] = []
@@ -39,6 +42,10 @@ class AgentProfileSchema(BaseModel):
 
 
 class GithubAnalyzeRequest(BaseModel):
+    full_name: str = Field(..., description="'owner/repo'")
+
+
+class GithubGenerateAdapterRequest(BaseModel):
     full_name: str = Field(..., description="'owner/repo'")
 
 

@@ -31,7 +31,16 @@ from typing import Any, AsyncIterator, Optional
 
 import httpx
 
-from app.providers.base import ChatMessage, ChatResult, LLMProvider, ModelInfo, ProviderError, ToolSpec
+from app.providers.base import (
+    ChatMessage,
+    ChatResult,
+    LLMProvider,
+    ModelInfo,
+    ProviderError,
+    ToolSpec,
+    is_retryable_status,
+)
+from app.providers.openai_compatible import messages_to_openai, tools_to_openai
 
 logger = logging.getLogger(__name__)
 
@@ -60,38 +69,11 @@ class ModelNotFoundError(ProviderError):
 
     def __init__(self, model: str, status_code: int, body: str) -> None:
         self.model = model
-        self.status_code = status_code
-        super().__init__(f"Bytez model '{model}' unavailable ({status_code}): {body}")
-
-
-def _messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for m in messages:
-        entry: dict[str, Any] = {"role": m.role, "content": m.content}
-        if m.name:
-            entry["name"] = m.name
-        if m.tool_call_id:
-            entry["tool_call_id"] = m.tool_call_id
-        if m.tool_calls:
-            entry["tool_calls"] = m.tool_calls
-        out.append(entry)
-    return out
-
-
-def _tools_to_openai(tools: Optional[list[ToolSpec]]) -> Optional[list[dict[str, Any]]]:
-    if not tools:
-        return None
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.input_schema,
-            },
-        }
-        for t in tools
-    ]
+        super().__init__(
+            f"Bytez model '{model}' unavailable ({status_code}): {body}",
+            status_code=status_code,
+            retryable=True,  # "model unavailable" is an explicitly allowed fallback reason
+        )
 
 
 def _looks_like_model_not_found(status_code: int, body: str) -> bool:
@@ -116,7 +98,7 @@ class BytezProvider(LLMProvider):
     ) -> None:
         if not api_key:
             raise ProviderError(
-                "BYTEZ_API_KEY is not set. Add it to your .env file (see .env.example)."
+                "BYTEZ_API_KEY is not set. Add it to your .env file (see .env.example).", retryable=False
             )
         self._api_key = api_key
         self._default_model = default_model
@@ -152,13 +134,17 @@ class BytezProvider(LLMProvider):
                 json=request_payload,
             )
         except httpx.HTTPError as exc:
-            raise ProviderError(f"Bytez request failed: {exc}") from exc
+            raise ProviderError(f"Bytez request failed: {exc}", retryable=True) from exc
 
         if resp.status_code != 200:
             body = resp.text[:500]
             if _looks_like_model_not_found(resp.status_code, body):
                 raise ModelNotFoundError(model, resp.status_code, body)
-            raise ProviderError(f"Bytez API error {resp.status_code}: {body}")
+            raise ProviderError(
+                f"Bytez API error {resp.status_code}: {body}",
+                status_code=resp.status_code,
+                retryable=is_retryable_status(resp.status_code),
+            )
 
         return resp.json()
 
@@ -170,15 +156,16 @@ class BytezProvider(LLMProvider):
         temperature: float = 0.2,
         max_tokens: Optional[int] = None,
         model: Optional[str] = None,
+        provider: Optional[str] = None,  # noqa: ARG002 - accepted for LLMProvider interface compat, unused here
     ) -> ChatResult:
         payload: dict[str, Any] = {
-            "messages": _messages_to_openai(messages),
+            "messages": messages_to_openai(messages),
             "temperature": temperature,
             "stream": False,
         }
         if max_tokens:
             payload["max_tokens"] = max_tokens
-        openai_tools = _tools_to_openai(tools)
+        openai_tools = tools_to_openai(tools)
         if openai_tools:
             payload["tools"] = openai_tools
             payload["tool_choice"] = "auto"
@@ -215,7 +202,8 @@ class BytezProvider(LLMProvider):
         assert last_error is not None
         raise ProviderError(
             f"None of the configured Bytez models are available on this account "
-            f"(tried: {', '.join(candidates)}). Last error: {last_error}"
+            f"(tried: {', '.join(candidates)}). Last error: {last_error}",
+            retryable=True,  # model-catalog issue, not an auth/config problem — safe for provider-level fallback
         )
 
     async def stream(
@@ -226,17 +214,18 @@ class BytezProvider(LLMProvider):
         temperature: float = 0.2,
         max_tokens: Optional[int] = None,
         model: Optional[str] = None,
+        provider: Optional[str] = None,  # noqa: ARG002 - accepted for LLMProvider interface compat, unused here
     ) -> AsyncIterator[str]:
         resolved_model = model or self._confirmed_model or self._default_model
         payload: dict[str, Any] = {
             "model": resolved_model,
-            "messages": _messages_to_openai(messages),
+            "messages": messages_to_openai(messages),
             "temperature": temperature,
             "stream": True,
         }
         if max_tokens:
             payload["max_tokens"] = max_tokens
-        openai_tools = _tools_to_openai(tools)
+        openai_tools = tools_to_openai(tools)
         if openai_tools:
             payload["tools"] = openai_tools
             payload["tool_choice"] = "auto"
@@ -251,7 +240,11 @@ class BytezProvider(LLMProvider):
                 ) as resp:
                     if resp.status_code != 200:
                         body = await resp.aread()
-                        raise ProviderError(f"Bytez API error {resp.status_code}: {body[:500]!r}")
+                        raise ProviderError(
+                            f"Bytez API error {resp.status_code}: {body[:500]!r}",
+                            status_code=resp.status_code,
+                            retryable=is_retryable_status(resp.status_code),
+                        )
                     async for line in resp.aiter_lines():
                         if not line or not line.startswith("data:"):
                             continue
@@ -267,7 +260,7 @@ class BytezProvider(LLMProvider):
                         if text:
                             yield text
             except httpx.HTTPError as exc:
-                raise ProviderError(f"Bytez streaming request failed: {exc}") from exc
+                raise ProviderError(f"Bytez streaming request failed: {exc}", retryable=True) from exc
 
     async def list_models(self) -> list[ModelInfo]:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -277,10 +270,14 @@ class BytezProvider(LLMProvider):
                     headers=self._headers(),
                 )
             except httpx.HTTPError as exc:
-                raise ProviderError(f"Bytez request failed: {exc}") from exc
+                raise ProviderError(f"Bytez request failed: {exc}", retryable=True) from exc
 
         if resp.status_code != 200:
-            raise ProviderError(f"Bytez API error {resp.status_code}: {resp.text[:500]}")
+            raise ProviderError(
+                f"Bytez API error {resp.status_code}: {resp.text[:500]}",
+                status_code=resp.status_code,
+                retryable=is_retryable_status(resp.status_code),
+            )
 
         data = resp.json()
         if data.get("error"):

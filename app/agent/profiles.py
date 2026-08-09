@@ -17,7 +17,8 @@ from typing import Any, Optional
 class AgentProfile:
     name: str
     system_prompt: str = "You are a helpful, precise AI agent. Use tools when they help answer accurately."
-    model: Optional[str] = None  # None => provider default (BYTEZ_MODEL)
+    provider: Optional[str] = None  # None => ProviderRouter.DEFAULT_PROVIDER + fallback order
+    model: Optional[str] = None  # None => the resolved provider's own default model
     temperature: float = 0.2
     tools: list[str] = field(default_factory=list)  # empty list = all registered tools allowed
     mcp_servers: list[str] = field(default_factory=list)

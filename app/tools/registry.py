@@ -52,7 +52,14 @@ class ToolRegistry:
         *,
         timeout: Optional[float] = None,
     ) -> ToolResult:
-        tool = self.get_tool(name)
+        try:
+            tool = self.get_tool(name)
+        except ToolError:
+            # The model hallucinated a tool name that doesn't exist. This must
+            # never crash the run — hand the model a clear error so it can
+            # self-correct on the next step.
+            return ToolResult(ok=False, error=f"Unknown tool: '{name}'")
+
         try:
             tool.validate(arguments)
         except ToolInputError as exc:

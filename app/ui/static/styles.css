@@ -101,3 +101,15 @@ body { margin: 0; background: var(--bg); color: var(--text); }
 #modal-content { white-space: pre-wrap; font-size: 0.85rem; }
 
 h2 { margin-top: 0; }
+
+.confirmation-card {
+  max-width: 800px; margin: 0 auto 12px; background: var(--panel-2); border: 1px solid #ffb454;
+  border-radius: 12px; padding: 14px 16px;
+}
+.confirmation-card.hidden { display: none; }
+.confirmation-card h4 { margin: 0 0 6px; color: #ffb454; }
+.confirmation-card pre { white-space: pre-wrap; font-size: 0.85rem; background: var(--panel); padding: 8px; border-radius: 8px; }
+.confirmation-actions { display: flex; gap: 8px; margin-top: 8px; }
+.confirmation-actions button { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; }
+.btn-approve { background: var(--accent-2); color: #06281a; }
+.btn-deny { background: var(--danger); color: #2a0808; }

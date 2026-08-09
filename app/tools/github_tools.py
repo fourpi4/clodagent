@@ -16,6 +16,10 @@ class GitHubSearchTool(Tool):
         },
         "required": ["query"],
     }
+    risk_level = "network"
+    side_effects = False
+    retry_safe = True
+    requires_confirmation = False
 
     def __init__(self, client: GitHubClient) -> None:
         self._client = client
@@ -45,6 +49,10 @@ class GitHubGetRepoTool(Tool):
         "properties": {"full_name": {"type": "string", "description": "'owner/repo', e.g. 'octocat/Hello-World'"}},
         "required": ["full_name"],
     }
+    risk_level = "network"
+    side_effects = False
+    retry_safe = True
+    requires_confirmation = False
 
     def __init__(self, client: GitHubClient) -> None:
         self._client = client
